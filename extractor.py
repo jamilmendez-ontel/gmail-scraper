@@ -10,13 +10,9 @@ Flow:
   5. ON CONFLICT (message_id) DO NOTHING → safe to re-run
 """
 
-import re
 import email.utils
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict
-
-# Only keep emails whose subject contains an 8-digit work order number
-_WORK_ORDER_RE = re.compile(r'\d{8}')
 
 from config import (
     SCHEMA_RAW, SCHEMA_STAGING, SCHEMA_PIPELINE,
@@ -241,18 +237,6 @@ def run_scraper(
         parsed.append(_parse_message(raw_msg))
         if i % 50 == 0:
             logger.info(f"  Fetched {i}/{len(new_message_ids)}")
-
-    # Filter: keep only emails with an 8-digit work order number in subject
-    before_filter = len(parsed)
-    parsed = [m for m in parsed if _WORK_ORDER_RE.search(m["subject"] or "")]
-    skipped = before_filter - len(parsed)
-    if skipped:
-        logger.info(f"Subject filter: kept {len(parsed):,} / {before_filter:,} "
-                    f"({skipped:,} skipped — no 8-digit number in subject)")
-
-    if not parsed:
-        logger.info("No emails passed subject filter. Nothing to load.")
-        return
 
     # Sort chronologically (oldest first) before loading
     parsed.sort(key=lambda m: m["received_at"])
