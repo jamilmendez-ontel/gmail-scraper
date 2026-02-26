@@ -263,5 +263,5 @@ def run_scraper(
     logger.info(f"Scraper complete")
     logger.info(f"  Emails loaded:  {total_loaded:,}")
     logger.info(f"  Already in DB:  {len(messages) - len(new_message_ids):,}")
-    logger.info(f"  Date range:     {earliest} → {latest}")
+    logger.info(f"  Date range:     {earliest} to {latest}")
     logger.info(f"{'='*60}\n")
