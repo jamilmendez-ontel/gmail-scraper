@@ -11,6 +11,8 @@ Setup (one-time):
 
 import pickle
 import base64
+import time
+import logging
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
@@ -18,6 +20,9 @@ from typing import List, Dict, Optional
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+_logger = logging.getLogger("scraper.gmail_client")
 
 # Read-only access is sufficient for scraping
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -101,17 +106,30 @@ def search_messages(service, query: str, max_results: int = 500) -> List[Dict]:
     return messages[:max_results]
 
 
-def get_full_message(service, message_id: str) -> Dict:
+def get_full_message(service, message_id: str, max_retries: int = 5) -> Dict:
     """
     Fetch a full message including headers and body.
 
+    Retries on transient network/API errors with exponential backoff.
     Returns the raw Gmail API message dict (payload, headers, labelIds, etc.)
     """
-    return service.users().messages().get(
-        userId="me",
-        id=message_id,
-        format="full",
-    ).execute()
+    for attempt in range(max_retries):
+        try:
+            return service.users().messages().get(
+                userId="me",
+                id=message_id,
+                format="full",
+            ).execute()
+        except (HttpError, Exception) as e:
+            if attempt == max_retries - 1:
+                raise
+            wait = min(2 ** attempt, 30)
+            _logger.warning(
+                f"get_full_message {message_id} failed "
+                f"(attempt {attempt + 1}/{max_retries}): "
+                f"{type(e).__name__}: {e}. Retrying in {wait}s..."
+            )
+            time.sleep(wait)
 
 
 def extract_html_body(payload: dict) -> str:

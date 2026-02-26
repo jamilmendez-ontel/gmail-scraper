@@ -30,7 +30,7 @@ from gmail_client import (
 
 logger = get_logger("extractor")
 
-BATCH_SIZE = 50  # Emails per DB batch (bodies can be large)
+BATCH_SIZE = 25  # Emails per DB batch (bodies can be large)
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
