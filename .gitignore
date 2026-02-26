@@ -1,0 +1,24 @@
+# Environment
+.env
+
+# Virtual environment
+venv/
+.venv/
+
+# Gmail OAuth credentials (keep credentials.json out of git)
+gmail_credentials/credentials.json
+gmail_credentials/token.pickle
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
