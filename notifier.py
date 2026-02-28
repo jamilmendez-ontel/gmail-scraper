@@ -115,30 +115,25 @@ def _get_sender_service():
     return build("gmail", "v1", credentials=creds)
 
 
-def generate_excel(thread_ids: List[str]) -> bytes:
+def generate_excel() -> bytes:
     """
-    Query stg_package_emails + stg_emails for given thread_ids and
-    return an in-memory Excel workbook as bytes.
+    Query all records from v_package_emails and return an in-memory
+    Excel workbook as bytes.
 
     Dynamic columns: fixed columns from the view come first, then any
     extra JSONB field keys discovered at query time are appended
     automatically — no code change needed when new fields appear.
     """
-    if not thread_ids:
-        return _empty_workbook()
-
     db = get_db()
 
-    # Query the deduped view for fixed columns + raw fields JSONB
+    # Query ALL deduped records + raw fields JSONB
     rows = db.fetch(
         f"""
         SELECT v.*, c.fields
         FROM {SCHEMA_ANALYTICS}.v_package_emails v
         JOIN {SCHEMA_STAGING}.stg_package_emails c USING (message_id)
-        WHERE v.thread_id = ANY($1::text[])
         ORDER BY v.received_at_et
         """,
-        thread_ids,
     )
 
     # Fixed columns (always present, in this order)
@@ -295,16 +290,6 @@ def generate_excel(thread_ids: List[str]) -> bytes:
     wb.save(buf)
     return buf.getvalue()
 
-
-def _empty_workbook() -> bytes:
-    """Return a minimal Excel file with just a header row."""
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Package Records"
-    ws.append(["No new package records this run"])
-    buf = BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
 
 
 def _build_html_email(message_ids: List[str], started: datetime, ended: datetime) -> str:
@@ -471,20 +456,6 @@ def send_report(log_text: str, message_ids: List[str],
     try:
         service = _get_sender_service()
 
-        # Resolve message_ids to thread_ids for deduped view filtering
-        db = get_db()
-        thread_ids = []
-        if message_ids:
-            rows = db.fetch(
-                f"""
-                SELECT DISTINCT thread_id
-                FROM {SCHEMA_STAGING}.stg_emails
-                WHERE message_id = ANY($1::text[])
-                """,
-                message_ids,
-            )
-            thread_ids = [r["thread_id"] for r in rows]
-
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         subject = f"Gmail Package Scraper: SUCCESS -- {today}"
 
@@ -497,8 +468,8 @@ def send_report(log_text: str, message_ids: List[str],
         html_body = _build_html_email(message_ids, started, ended)
         msg.attach(MIMEText(html_body, "html"))
 
-        # Excel attachment (only records from this run, filtered by thread)
-        excel_bytes = generate_excel(thread_ids)
+        # Excel attachment (all records)
+        excel_bytes = generate_excel()
         excel_filename = f"package_records_{today}.xlsx"
         excel_part = MIMEBase(
             "application",
