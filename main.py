@@ -11,14 +11,27 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
+from datetime import datetime, timezone
+from io import StringIO
 
-from config import setup_logging, GMAIL_QUERY, GMAIL_DAYS_BACK, GMAIL_MAX_RESULTS
+from config import setup_logging, GMAIL_QUERY, GMAIL_DAYS_BACK, GMAIL_MAX_RESULTS, REPORT_EMAIL_TO
 from db import close_db
 from extractor import run_scraper
+from notifier import send_report
 from parser import run_parser
 
 setup_logging()
+
+# Capture all log output in memory for the report email
+_log_buffer = StringIO()
+_log_capture = logging.StreamHandler(_log_buffer)
+_log_capture.setFormatter(logging.Formatter(
+    "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+))
+logging.getLogger("scraper").addHandler(_log_capture)
 
 
 def main():
@@ -56,17 +69,29 @@ def main():
     )
     args = arg_parser.parse_args()
 
+    started = datetime.now(timezone.utc)
+
     try:
         # Step 1: Scrape Gmail (unless --parse-only)
+        scraped_ids = []
         if not args.parse_only:
-            run_scraper(
+            scraped_ids = run_scraper(
                 reprocess=args.reprocess,
                 query=args.query,
                 max_results=args.max_results,
             )
 
         # Step 2: Parse COP email bodies
-        run_parser(reparse=args.reparse or args.reprocess)
+        parsed_ids = run_parser(reparse=args.reparse or args.reprocess)
+
+        ended = datetime.now(timezone.utc)
+
+        # Step 3: Send notification email
+        if REPORT_EMAIL_TO:
+            log_text = _log_buffer.getvalue()
+            # Use union of scraped + parsed IDs for the Excel report
+            all_ids = list(dict.fromkeys(scraped_ids + parsed_ids))
+            send_report(log_text, all_ids, started=started, ended=ended)
 
     except KeyboardInterrupt:
         print("\nInterrupted by user.")

@@ -170,3 +170,5 @@ def extract_plain_text(payload: dict) -> str:
             return result
 
     return ""
+
+

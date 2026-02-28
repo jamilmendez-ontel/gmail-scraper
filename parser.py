@@ -206,7 +206,7 @@ def _upsert_cop_batch(db, rows: List[Dict]) -> None:
 BATCH_SIZE = 50
 
 
-def run_parser(reparse: bool = False) -> int:
+def run_parser(reparse: bool = False) -> List[str]:
     """
     Parse COP email bodies and populate stg_cop_emails.
 
@@ -215,7 +215,7 @@ def run_parser(reparse: bool = False) -> int:
                  If False (default), only parse emails not yet in stg_cop_emails.
 
     Returns:
-        Number of emails parsed.
+        List of message_ids parsed during this run.
     """
     logger.info("=" * 60)
     logger.info("COP Email Parser")
@@ -242,7 +242,7 @@ def run_parser(reparse: bool = False) -> int:
 
     if not rows:
         logger.info("Nothing to parse.")
-        return 0
+        return []
 
     # Parse
     parsed_rows = []
@@ -271,4 +271,4 @@ def run_parser(reparse: bool = False) -> int:
     logger.info(f"Parser complete — {success:,} parsed OK, {errors:,} parse errors")
     logger.info("=" * 60)
 
-    return len(parsed_rows)
+    return [r["message_id"] for r in parsed_rows]

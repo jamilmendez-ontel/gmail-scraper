@@ -170,7 +170,7 @@ def run_scraper(
     reprocess: bool = False,
     query: str = None,
     max_results: int = None,
-):
+) -> List[str]:
     """
     Incremental Gmail scraper.
 
@@ -178,6 +178,9 @@ def run_scraper(
         reprocess: If True, ignore last seen date and re-fetch from GMAIL_DAYS_BACK.
         query: Override GMAIL_QUERY from .env.
         max_results: Override GMAIL_MAX_RESULTS from .env.
+
+    Returns:
+        List of new message_ids loaded during this run.
     """
     base_query   = query or GMAIL_QUERY
     max_results  = max_results or GMAIL_MAX_RESULTS
@@ -218,7 +221,7 @@ def run_scraper(
 
     if not messages:
         logger.info("No new emails found. Nothing to do.")
-        return
+        return []
 
     # ── Step 4: Filter already-loaded, sort oldest-first ─────────────────────
     new_message_ids = [m["id"] for m in messages if m["id"] not in existing_ids]
@@ -227,7 +230,7 @@ def run_scraper(
 
     if not new_message_ids:
         logger.info("All matched emails already loaded.")
-        return
+        return []
 
     # ── Step 5: Fetch full messages + parse ───────────────────────────────────
     logger.info("Fetching full message details...")
@@ -265,3 +268,5 @@ def run_scraper(
     logger.info(f"  Already in DB:  {len(messages) - len(new_message_ids):,}")
     logger.info(f"  Date range:     {earliest} to {latest}")
     logger.info(f"{'='*60}\n")
+
+    return new_message_ids
