@@ -174,6 +174,10 @@ def parse_package_email(html_body: str) -> Dict:
             if is_label and i + 1 < len(cells):
                 label = text.rstrip(":").strip()
 
+                # Fix labels broken by hidden-span removal
+                # e.g. "C onstruction Engineer" → "Construction Engineer"
+                label = re.sub(r'\b([A-Z]) ([a-z])', r'\1\2', label)
+
                 # Skip section headers and empty labels
                 if not label or label.upper() in _SECTION_HEADERS:
                     i += 1

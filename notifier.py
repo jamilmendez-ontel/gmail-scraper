@@ -8,6 +8,7 @@ the scraper's Ontel account used for reading).
 
 import base64
 import pickle
+import re
 import traceback
 from io import BytesIO
 from pathlib import Path
@@ -30,11 +31,14 @@ from db import get_db
 
 logger = get_logger("notifier")
 
-# Date formats found in package email fields (tried in order)
+# Date formats found in package email fields (tried in order — most specific first)
 _DATE_FORMATS = [
-    "%m-%d-%Y %I:%M %p",  # 02-25-2026 01:40 AM
+    "%m-%d-%Y %I:%M %p",  # 02-25-2026 01:40 PM
+    "%m/%d/%Y %I:%M %p",  # 10/16/2025 2:55 PM
+    "%m/%d/%y %I:%M %p",  # 2/26/26 3:00 PM
     "%m-%d-%Y",            # 02-26-2026
     "%m/%d/%Y",            # 2/3/2026, 12/22/2025
+    "%m/%d/%y",            # 2/27/26
 ]
 
 # Columns that contain date values
@@ -48,12 +52,32 @@ _DATE_COLUMNS = {
 
 
 def _try_parse_date(val: str):
-    """Try to parse a string as a date. Returns datetime on success, original string otherwise."""
-    if not val or val in ("N/A", "PENDING ITEMS", "--", ""):
+    """Try to parse a string as a date. Returns datetime on success, empty string for placeholders, original string otherwise."""
+    if not val:
         return val
+    cleaned = val.strip()
+
+    # Skip known non-date placeholders
+    if cleaned in ("N/A", "No", "PENDING ITEMS", "- -", "--/--/----", "--", ""):
+        return ""
+
+    # Skip time-only values (no date component, e.g. "12:00:00 AM")
+    if re.match(r'^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)?$', cleaned, re.IGNORECASE):
+        return ""
+
+    # Remove stray spaces from date values (e.g. "02-1 9 -2026" → "02-19-2026")
+    # Split off AM/PM time portion first to preserve its spacing
+    m = re.match(r'^(.*?)(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM))$', cleaned, re.IGNORECASE)
+    if m:
+        date_part = m.group(1).replace(' ', '')
+        time_part = m.group(2).strip()
+        cleaned = f"{date_part} {time_part}"
+    else:
+        cleaned = cleaned.replace(' ', '')
+
     for fmt in _DATE_FORMATS:
         try:
-            return datetime.strptime(val.strip(), fmt)
+            return datetime.strptime(cleaned, fmt)
         except ValueError:
             continue
     return val
@@ -122,6 +146,7 @@ def generate_excel(thread_ids: List[str]) -> bytes:
         ("received_at_et", "Received (ET)"),
         ("sender_email", "Sender"),
         ("clean_subject", "Subject"),
+        ("subject", "Raw Subject"),
         ("package_type", "Package Type"),
         ("site_id", "Site ID"),
         ("site_name", "Site Name"),
