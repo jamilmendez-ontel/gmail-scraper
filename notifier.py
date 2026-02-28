@@ -30,7 +30,7 @@ from db import get_db
 
 logger = get_logger("notifier")
 
-# Date formats found in COP email fields (tried in order)
+# Date formats found in package email fields (tried in order)
 _DATE_FORMATS = [
     "%m-%d-%Y %I:%M %p",  # 02-25-2026 01:40 AM
     "%m-%d-%Y",            # 02-26-2026
@@ -42,6 +42,8 @@ _DATE_COLUMNS = {
     "raw_files_received", "cx_start", "cx_complete",
     "live_review_complete", "revision_files_received",
     "revision_complete", "cop_complete",
+    "cutover_complete", "hr48_raw_files_received", "hr48_package_complete",
+    "pmi_cop_complete", "ll_cop_complete",
 }
 
 
@@ -91,7 +93,7 @@ def _get_sender_service():
 
 def generate_excel(thread_ids: List[str]) -> bytes:
     """
-    Query stg_cop_emails + stg_emails for the given thread_ids and
+    Query stg_package_emails + stg_emails for given thread_ids and
     return an in-memory Excel workbook as bytes.
 
     Dynamic columns: fixed columns from the view come first, then any
@@ -107,8 +109,8 @@ def generate_excel(thread_ids: List[str]) -> bytes:
     rows = db.fetch(
         f"""
         SELECT v.*, c.fields
-        FROM {SCHEMA_ANALYTICS}.v_cop_emails v
-        JOIN {SCHEMA_STAGING}.stg_cop_emails c USING (message_id)
+        FROM {SCHEMA_ANALYTICS}.v_package_emails v
+        JOIN {SCHEMA_STAGING}.stg_package_emails c USING (message_id)
         WHERE v.thread_id = ANY($1::text[])
         ORDER BY v.received_at_et
         """,
@@ -133,6 +135,7 @@ def generate_excel(thread_ids: List[str]) -> bytes:
         ("cm_name", "CM Name"),
         ("project_manager", "Project Manager"),
         ("equipment_engineer", "Equipment Engineer"),
+        ("construction_engineer", "Construction Engineer"),
         ("raw_files_received", "Raw Files Received"),
         ("cx_start", "CX Start"),
         ("cx_complete", "CX Complete"),
@@ -145,6 +148,16 @@ def generate_excel(thread_ids: List[str]) -> bytes:
         ("cop_status", "COP Status"),
         ("cop_duration", "COP Duration"),
         ("cop_raw_file_duration", "COP Raw File Duration"),
+        ("cutover_complete", "Cutover Complete"),
+        ("hr48_raw_file_duration", "48Hr Raw File Duration"),
+        ("hr48_package_duration", "48Hr Package Duration"),
+        ("hr48_raw_files_received", "48Hr Raw Files Received"),
+        ("hr48_package_complete", "48Hr Package Complete"),
+        ("pmi_cop_complete", "PMI COP Complete"),
+        ("smart_tool_project_num", "Smart Tool Project #"),
+        ("mdg_location_id", "MDG Location ID"),
+        ("landlord_site_name", "Landlord Site Name"),
+        ("ll_cop_complete", "LL COP Complete"),
         ("open_items", "Open Items"),
         ("dropbox_url", "Dropbox URL"),
         ("swift_url", "Swift URL"),
@@ -153,15 +166,16 @@ def generate_excel(thread_ids: List[str]) -> bytes:
     # Keys already covered by the fixed columns (normalized from JSONB)
     _known_field_keys = {
         "SITE ID", "Site ID", "Landlord Site ID",
-        "SITE NAME", "Site Name",
+        "SITE NAME", "Site Name", "Carrier Site Name",
         "GC NAME", "GC Name",
         "LANDLORD", "Landlord",
-        "PROJECT", "Project Type",
-        "PROJECT ID", "Project ID",
-        "MARKET", "Market-County",
+        "PROJECT", "Project Type", "Carrier Project Type",
+        "PROJECT ID", "Project ID", "Carrier Project ID",
+        "MARKET", "Market-County", "County",
         "STRUCTURE TYPE", "Structure Type",
         "CM Company", "CM Name",
         "Project Manager", "Equipment Engineer",
+        "Construction Engineer", "A&E Company",
         "RAW FILES RECEIVED", "COP Raw Files Received",
         "CX START", "CX Start",
         "CX COMPLETE", "CX Complete",
@@ -169,8 +183,16 @@ def generate_excel(thread_ids: List[str]) -> bytes:
         "LIVE REVIEW COMPLETE", "Live Review Complete",
         "Live Review Duration",
         "REVISION FILES RECEIVED", "REVISION COMPLETE",
+        "Revision Files Received", "Revision Complete",
         "COP COMPLETE", "COP Complete",
         "COP Status", "COP Duration", "COP Raw File Duration",
+        "Cutover Complete",
+        "48Hr Raw File Duration", "48Hr Package Duration",
+        "48Hr Raw Files Received", "48Hr Package Complete",
+        "PMI COP Complete",
+        "Smart Tool Project #", "MDG Location ID",
+        "Landlord Site Name",
+        "LL COP Complete", "LL COP COMPLETE",
         "Open Items",
     }
 
@@ -186,7 +208,7 @@ def generate_excel(thread_ids: List[str]) -> bytes:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "COP Records"
+    ws.title = "Package Records"
 
     # Header row: fixed columns + any dynamic extras
     headers = [label for _, label in fixed_columns] + extra_keys
@@ -253,8 +275,8 @@ def _empty_workbook() -> bytes:
     """Return a minimal Excel file with just a header row."""
     wb = Workbook()
     ws = wb.active
-    ws.title = "COP Records"
-    ws.append(["No new COP records this run"])
+    ws.title = "Package Records"
+    ws.append(["No new package records this run"])
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -267,10 +289,10 @@ def _build_html_email(message_ids: List[str], started: datetime, ended: datetime
     db = get_db()
 
     total_cop = db.fetchrow(
-        f"SELECT COUNT(*) AS cnt FROM {SCHEMA_ANALYTICS}.v_cop_emails"
+        f"SELECT COUNT(*) AS cnt FROM {SCHEMA_ANALYTICS}.v_package_emails"
     )
     total_scraped = db.fetchrow(
-        f"SELECT COUNT(*) AS cnt FROM {SCHEMA_STAGING}.stg_cop_emails"
+        f"SELECT COUNT(*) AS cnt FROM {SCHEMA_STAGING}.stg_package_emails"
     )
     total_emails = db.fetchrow(
         f"SELECT COUNT(*) AS cnt FROM {SCHEMA_STAGING}.stg_emails"
@@ -278,7 +300,7 @@ def _build_html_email(message_ids: List[str], started: datetime, ended: datetime
     by_type = db.fetch(
         f"""
         SELECT package_type, COUNT(*) AS cnt
-        FROM {SCHEMA_ANALYTICS}.v_cop_emails
+        FROM {SCHEMA_ANALYTICS}.v_package_emails
         GROUP BY package_type ORDER BY cnt DESC
         """
     )
@@ -321,7 +343,7 @@ def _build_html_email(message_ids: List[str], started: datetime, ended: datetime
     html = f"""
     <html><body style="font-family:Arial,sans-serif;margin:0;padding:0;">
     <div style="background-color:{banner_color};color:white;padding:16px 24px;border-radius:4px 4px 0 0;">
-        <h2 style="margin:0;">Gmail COP Scraper: {status}</h2>
+        <h2 style="margin:0;">Gmail Package Scraper: {status}</h2>
     </div>
     <div style="padding:16px 24px;">
 
@@ -347,7 +369,7 @@ def _build_html_email(message_ids: List[str], started: datetime, ended: datetime
                     <td style="padding:6px 12px;border:1px solid #ddd;">{new_count} new emails fetched</td>
                 </tr>
                 <tr>
-                    <td style="padding:6px 12px;border:1px solid #ddd;">COP Parser</td>
+                    <td style="padding:6px 12px;border:1px solid #ddd;">Package Parser</td>
                     <td style="padding:6px 12px;border:1px solid #ddd;color:#2e7d32;font-weight:bold;">SUCCESS</td>
                     <td style="padding:6px 12px;border:1px solid #ddd;">{new_count} emails parsed</td>
                 </tr>
@@ -370,19 +392,19 @@ def _build_html_email(message_ids: List[str], started: datetime, ended: datetime
                     <td style="padding:6px 12px;border:1px solid #ddd;text-align:right;color:{change_color};font-weight:bold;">{change_str}</td>
                 </tr>
                 <tr>
-                    <td style="padding:6px 12px;border:1px solid #ddd;">stg_cop_emails (all)</td>
+                    <td style="padding:6px 12px;border:1px solid #ddd;">stg_package_emails</td>
                     <td style="padding:6px 12px;border:1px solid #ddd;text-align:right;">{total_scraped['cnt']:,}</td>
                     <td style="padding:6px 12px;border:1px solid #ddd;text-align:right;color:{change_color};font-weight:bold;">{change_str}</td>
                 </tr>
                 <tr>
-                    <td style="padding:6px 12px;border:1px solid #ddd;">v_cop_emails (parsed, deduped)</td>
+                    <td style="padding:6px 12px;border:1px solid #ddd;">v_package_emails (deduped)</td>
                     <td style="padding:6px 12px;border:1px solid #ddd;text-align:right;">{total_cop['cnt']:,}</td>
                     <td style="padding:6px 12px;border:1px solid #ddd;text-align:right;">-</td>
                 </tr>
             </tbody>
         </table>
 
-        <h3 style="margin-top:24px;margin-bottom:8px;">COP Records by Package Type</h3>
+        <h3 style="margin-top:24px;margin-bottom:8px;">Records by Package Type</h3>
         <table style="border-collapse:collapse;">
             <thead>
                 <tr style="background-color:#f5f5f5;">
@@ -407,7 +429,7 @@ def send_report(log_text: str, message_ids: List[str],
     Build and send the pipeline report email via the nanoninth account.
 
     Attachments:
-      - cop_records_YYYY-MM-DD.xlsx (parsed COP data from analytics view)
+      - package_records_YYYY-MM-DD.xlsx (parsed package data from analytics view)
       - scraper_YYYY-MM-DD.log (full pipeline log output)
 
     Wrapped in try/except — email failures are logged but never crash the pipeline.
@@ -439,7 +461,7 @@ def send_report(log_text: str, message_ids: List[str],
             thread_ids = [r["thread_id"] for r in rows]
 
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        subject = f"Gmail COP Scraper: SUCCESS -- {today}"
+        subject = f"Gmail Package Scraper: SUCCESS -- {today}"
 
         # Build MIME message
         msg = MIMEMultipart()
@@ -452,7 +474,7 @@ def send_report(log_text: str, message_ids: List[str],
 
         # Excel attachment (only records from this run, filtered by thread)
         excel_bytes = generate_excel(thread_ids)
-        excel_filename = f"cop_records_{today}.xlsx"
+        excel_filename = f"package_records_{today}.xlsx"
         excel_part = MIMEBase(
             "application",
             "vnd.openxmlformats-officedocument.spreadsheetml.sheet",

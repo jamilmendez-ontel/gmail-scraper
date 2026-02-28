@@ -36,7 +36,7 @@ logging.getLogger("scraper").addHandler(_log_capture)
 
 def main():
     arg_parser = argparse.ArgumentParser(
-        description="Incremental Gmail scraper + COP parser → Supabase"
+        description="Incremental Gmail scraper + package parser → Supabase"
     )
     arg_parser.add_argument(
         "--reprocess",
@@ -51,7 +51,7 @@ def main():
     arg_parser.add_argument(
         "--reparse",
         action="store_true",
-        help="Re-parse all emails even if already in stg_cop_emails",
+        help="Re-parse all emails even if already in stg_package_emails",
     )
     arg_parser.add_argument(
         "--query",
