@@ -37,10 +37,10 @@ jobs:
       - name: Create .env
         run: |
           cat > .env <<'DOTENV'
-          SUPABASE_HOST=db.voqfjfngdpcvevbkikud.supabase.co
+          SUPABASE_HOST=aws-0-ap-southeast-1.pooler.supabase.com
           SUPABASE_PORT=5432
           SUPABASE_DB=postgres
-          SUPABASE_USER=postgres
+          SUPABASE_USER=postgres.voqfjfngdpcvevbkikud
           GMAIL_QUERY=from:ontel.co subject:"CG"
           GMAIL_DAYS_BACK=30
           GMAIL_MAX_RESULTS=500
