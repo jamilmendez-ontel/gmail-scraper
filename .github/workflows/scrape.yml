@@ -1,0 +1,77 @@
+name: Gmail Package Scraper
+
+on:
+  schedule:
+    # 4 AM UTC = 11 PM EST / 12 AM EDT
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      reprocess:
+        description: 'Re-fetch last N days and reparse all emails'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: gmail-scraper
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env
+        run: |
+          cat > .env <<'DOTENV'
+          SUPABASE_HOST=db.voqfjfngdpcvevbkikud.supabase.co
+          SUPABASE_PORT=5432
+          SUPABASE_DB=postgres
+          SUPABASE_USER=postgres
+          GMAIL_QUERY=from:ontel.co subject:"CG"
+          GMAIL_DAYS_BACK=30
+          GMAIL_MAX_RESULTS=500
+          REPORT_EMAIL_TO=jamil.mendez@ontel.co,john@ontel.co,hajie@ontel.co
+          NOTIFY_CREDENTIALS_DIR=./notify_credentials
+          DOTENV
+          echo "SUPABASE_PASSWORD=${{ secrets.SUPABASE_PASSWORD }}" >> .env
+
+      - name: Decode scraper credentials
+        run: |
+          mkdir -p gmail_credentials
+          echo "${{ secrets.SCRAPER_CREDENTIALS_JSON }}" | base64 -d > gmail_credentials/credentials.json
+          echo "${{ secrets.SCRAPER_TOKEN_PICKLE }}" | base64 -d > gmail_credentials/token.pickle
+
+      - name: Decode notifier credentials
+        run: |
+          mkdir -p notify_credentials
+          echo "${{ secrets.NOTIFIER_TOKEN_PICKLE }}" | base64 -d > notify_credentials/token.pickle
+
+      - name: Run scraper
+        run: |
+          if [ "${{ github.event.inputs.reprocess }}" = "true" ]; then
+            python main.py --reprocess
+          else
+            python main.py
+          fi
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-logs
+          path: '*.log'
+          retention-days: 7
