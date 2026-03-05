@@ -18,7 +18,7 @@ SCHEMA_PIPELINE = "pipeline"
 # ── Gmail settings ────────────────────────────────────────────────────────────
 GMAIL_QUERY       = os.getenv("GMAIL_QUERY", "in:inbox")
 GMAIL_DAYS_BACK   = int(os.getenv("GMAIL_DAYS_BACK", "30"))
-GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "500"))
+GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "2000"))
 
 # ── Notification settings ────────────────────────────────────────────────────
 REPORT_EMAIL_TO = os.getenv("REPORT_EMAIL_TO", "")
