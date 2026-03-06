@@ -43,7 +43,7 @@ jobs:
           SUPABASE_USER=postgres.voqfjfngdpcvevbkikud
           GMAIL_QUERY=subject:{CG1 CG2 CG3 CG4 CG5 CG6 CG7 CG8 CG9}
           GMAIL_DAYS_BACK=30
-          GMAIL_MAX_RESULTS=500
+          GMAIL_MAX_RESULTS=2000
           REPORT_EMAIL_TO=jamil.mendez@ontel.co
           NOTIFY_CREDENTIALS_DIR=./notify_credentials
           DOTENV
