@@ -20,6 +20,11 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Downstream: notify cop-date-validator that fresh email data is ready.
+      # Only set on this nightly workflow — not on any continuous/Apps Script runs.
+      FIRE_VALIDATOR_DISPATCH: '1'
+      GITHUB_PAT: ${{ secrets.COP_DISPATCH_PAT }}
 
     steps:
       - name: Checkout
