@@ -97,13 +97,13 @@ def main():
         # Step 4: Fire downstream dispatch only on nightly runs.
         # The nightly GHA workflow sets FIRE_VALIDATOR_DISPATCH=1; Apps Script
         # continuous triggers (every 5 min) do NOT set it, so those skip the
-        # dispatch and don't flood cop-date-validator with no-op runs.
+        # dispatch and don't flood date-validator with no-op runs.
         if os.getenv("FIRE_VALIDATOR_DISPATCH") == "1":
             try:
                 from github_trigger import fire_dispatch
                 fire_dispatch(
-                    "jamilmendez-ontel/cop-date-validator",
-                    "cop-date-validator-daily",
+                    "jamilmendez-ontel/date-validator",
+                    "date-validator-daily",
                     client_payload={"source": "gmail_scraper"},
                 )
             except Exception as e:
