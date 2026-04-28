@@ -27,7 +27,7 @@ _SECTION_HEADERS = {
     "ADDITIONAL NOTES", "PENDING ITEMS",
     "CLOSE OUT PACKAGE", "LANDLORD CLOSE OUT PACKAGE",
     "POST MODIFICATION INSPECTION CLOSE OUT PACKAGE",
-    "48 HOUR PACKAGE REVIEW",
+    "48 HOUR PACKAGE REVIEW", "LIVE REVIEW",
     "PACKAGE SUMMARY", "CATEGORY", "STATUS",
     "ADDITIONAL PACKAGES REQUIRED",
 }
@@ -38,6 +38,7 @@ _HEADER_PATTERNS = [
     "CLOSE OUT PACKAGE",           # COP REVIEW, COP REVISION, PMI
     "48 HOUR PACKAGE",             # 48Hr reviews
     "PACKAGE REVIEW",              # catch-all for other package types
+    "LIVE REVIEW",                 # in-progress live review (same field structure)
 ]
 
 # ── HTML parsing ──────────────────────────────────────────────────────────────
@@ -49,37 +50,19 @@ def _clean_text(text: str) -> str:
 
 def _extract_package_type(header_text: str) -> str:
     """
-    Derive a short package type label from the header row text.
+    Return the full uppercase header title with light cleanup.
 
-    Examples:
-      "POST MODIFICATION INSPECTION CLOSE OUT PACKAGE" → "PMI"
-      "LANDLORD CLOSE OUT PACKAGE"                     → "LL COP"
-      "CLOSE OUT PACKAGE REVIEW"                       → "REVIEW"
-      "CLOSE OUT PACKAGE REVISION"                     → "REVISION"
-      "48 HOUR PACKAGE REVIEW"                         → "48HR REVIEW"
+    Strips leading hex hash prefixes (e.g. "415AE6AA POST MODIFICATION...")
+    and repairs span-removal artifacts where a leading uppercase letter got
+    detached (e.g. "NDLORD CLOSE OUT PACKAGE" → "LANDLORD CLOSE OUT PACKAGE").
     """
-    t = header_text.upper()
-    if "POST MODIFICATION INSPECTION" in t:
-        return "PMI"
-    if "LANDLORD" in t and "CLOSE OUT PACKAGE" in t:
-        return "LL COP"
-    # 48Hr package types
-    if "48 HOUR" in t or "48HR" in t:
-        if "REVIEW" in t:
-            return "48HR REVIEW"
-        if "REVISION" in t:
-            return "48HR REVISION"
-        return "48HR"
-    if "REVIEW" in t:
-        return "REVIEW"
-    if "REVISION" in t:
-        return "REVISION"
-    if "CLOSE OUT PACKAGE" in t:
-        # Extract word after "CLOSE OUT PACKAGE" if any
-        m = re.search(r'CLOSE OUT PACKAGE\s+(\w+)', t)
-        if m:
-            return m.group(1).strip()
-    return "UNKNOWN"
+    t = _clean_text(header_text).upper()
+    # Strip leading 6+ char hex hash prefix (residue from hidden hash spans)
+    t = re.sub(r'^[0-9A-F]{6,}\s+', '', t)
+    # Repair span-removal artifact: orphan partial words that match a known prefix
+    if t.startswith('NDLORD CLOSE OUT PACKAGE'):
+        t = 'LA' + t
+    return t or "UNKNOWN"
 
 
 def parse_package_email(html_body: str) -> Dict:
@@ -90,7 +73,10 @@ def parse_package_email(html_body: str) -> Dict:
     other PACKAGE REVIEW headers.
 
     Returns dict with keys:
-        package_type  str   REVIEW / REVISION / PMI / 48HR REVIEW / UNKNOWN
+        package_type  str   Full uppercase header title (e.g.
+                            "CLOSE OUT PACKAGE REVIEW", "LIVE REVIEW",
+                            "POST MODIFICATION INSPECTION CLOSE OUT PACKAGE",
+                            "LANDLORD CLOSE OUT PACKAGE", "48 HOUR PACKAGE REVIEW")
         fields        dict  All label:value pairs from the table
         dropbox_url   str | None
         swift_url     str | None
@@ -108,9 +94,13 @@ def parse_package_email(html_body: str) -> Dict:
         span.decompose()
 
     # ── Step 1: Find the package header cell ─────────────────────────────────
+    # Skip label cells (text ends with ":") and long-form prose (likely notes
+    # paragraphs that mention a header phrase incidentally).
     header_cell = None
     for cell in soup.find_all(["th", "td"]):
         text = _clean_text(cell.get_text(" ", strip=True)).upper()
+        if not text or text.endswith(":") or len(text) > 80:
+            continue
         for pattern in _HEADER_PATTERNS:
             if pattern in text:
                 header_cell = cell

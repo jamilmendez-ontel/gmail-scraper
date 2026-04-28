@@ -6,7 +6,6 @@ Sends via the pipeline's nanoninth Gmail account (separate credentials from
 the scraper's Ontel account used for reading).
 """
 
-import base64
 import pickle
 import re
 import traceback
@@ -21,6 +20,7 @@ from typing import List
 
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from openpyxl import Workbook
 from openpyxl.styles import numbers
 
@@ -126,19 +126,25 @@ def generate_excel() -> bytes:
     """
     db = get_db()
 
-    # Query ALL deduped records + raw fields JSONB
+    # Query every parsed email + raw fields JSONB.
+    # Rows are grouped by thread (adjacent), threads ordered by their earliest
+    # message, within-thread rows in chronological order.
     rows = db.fetch(
         f"""
         SELECT v.*, c.fields
         FROM {SCHEMA_ANALYTICS}.v_package_emails v
         JOIN {SCHEMA_STAGING}.stg_package_emails c USING (message_id)
-        ORDER BY v.received_at_et
+        ORDER BY
+            MIN(v.received_at_et) OVER (PARTITION BY v.thread_id),
+            v.thread_id,
+            v.received_at_et
         """,
     )
 
     # Fixed columns (always present, in this order)
     fixed_columns = [
         ("received_at_et", "Received (ET)"),
+        ("thread_id", "Thread ID"),
         ("sender_email", "Sender"),
         ("clean_subject", "Subject"),
         ("subject", "Raw Subject"),
@@ -488,10 +494,27 @@ def send_report(log_text: str, message_ids: List[str],
         log_part.add_header("Content-Disposition", "attachment", filename=log_filename)
         msg.attach(log_part)
 
-        # Send
-        raw = base64.urlsafe_b64encode(msg.as_string().encode()).decode()
+        # Send via media-upload endpoint (35 MB ceiling) instead of raw-body
+        # JSON (~10 MB cap), so we stay well clear of size limits as row counts
+        # grow. Gmail's hard user-facing attachment limit is still 25 MB — warn
+        # if we're approaching it.
+        msg_bytes = msg.as_bytes()
+        size_mb = len(msg_bytes) / (1024 * 1024)
+        if size_mb > 20:
+            logger.warning(
+                f"Report MIME size is {size_mb:.1f} MB — approaching Gmail's "
+                f"25 MB outgoing attachment limit. Consider splitting soon."
+            )
+        else:
+            logger.info(f"Report MIME size: {size_mb:.2f} MB")
+
+        media = MediaIoBaseUpload(
+            BytesIO(msg_bytes),
+            mimetype="message/rfc822",
+            resumable=False,
+        )
         service.users().messages().send(
-            userId="me", body={"raw": raw}
+            userId="me", body={}, media_body=media
         ).execute()
 
         logger.info(f"Report email sent to {REPORT_EMAIL_TO}")
